@@ -1,59 +1,120 @@
-let regions; // Variable para guardar los datos del JSON
+// --- VARIABLES PARA LA ANIMACIÓN ---
+let regionsData; // Para guardar los datos del JSON
+let transformedRegions = []; // Para guardar las regiones con coordenadas ya calculadas
 
-// 1. Cargar el JSON (equivalente a 'with open(...) as f:')
-// p5.js lo carga antes de que el programa empiece
+// Estado de la animación
+let currentRegionIndex = 0; // ¿Qué región estamos dibujando?
+let currentPointIndex = 0; // ¿Qué vértice de esa región estamos dibujando?
+
+let animationIsFinished = false;
+
+// 1. Cargar el JSON antes de que todo empiece
 function preload() {
-  regions = loadJSON('rosas.json');
+  regionsData = loadJSON('rosas.json');
 }
+
 
 function setup() {
-  // Configurar el lienzo (equivalente a turtle.Screen() y .setup())
   createCanvas(800, 800);
-  background('black'); // Equivalente a screen.bgcolor("black")
+  background('black');
   
-  // Como el dibujo no se mueve, le decimos a p5 que solo dibuje una vez
-  noLoop(); 
-}
+  // Ajusta la velocidad de la animación (más alto = más rápido)
+  // Puedes jugar con este valor. 60 es un buen punto de partida.
+  frameRate(60);
 
-function draw() {
-  // El código dentro de draw() se ejecuta después de setup()
-  // "regions" ya es un objeto de JS gracias a loadJSON
-  const regionArray = Object.values(regions);
+  // --- CÁLCULOS INICIALES (los hacemos solo una vez) ---
+  const regionArray = Object.values(regionsData);
 
-  // 2. Calcular límites para centrar el dibujo (misma lógica que en Python)
+  // Calcular límites (misma lógica que Python)
   const allPoints = regionArray.flatMap(r => r.contour);
   const min_x = Math.min(...allPoints.map(p => p[0]));
   const max_x = Math.max(...allPoints.map(p => p[0]));
   const min_y = Math.min(...allPoints.map(p => p[1]));
   const max_y = Math.max(...allPoints.map(p => p[1]));
 
-  // 3. Calcular escala y centro (misma lógica)
-  const width = max_x - min_x;
-  const height = max_y - min_y;
-  const scale = Math.min(600 / width, 600 / height);
+  // Calcular escala y centro (misma lógica)
+  const drawingWidth = max_x - min_x;
+  const drawingHeight = max_y - min_y;
+  const scale = Math.min(600 / drawingWidth, 600 / drawingHeight);
   const center_x = (min_x + max_x) / 2;
   const center_y = (min_y + max_y) / 2;
 
-  // ¡Importante! En p5.js, el origen (0,0) es la esquina superior izquierda.
-  // Movemos todo el sistema de coordenadas al centro del lienzo.
-  translate(width / 2, height / 2);
-
-  // 4. Dibujar cada región (equivalente al bucle for de Python)
+  // Pre-calcular todas las coordenadas transformadas
   for (const region of regionArray) {
-    // Configurar color de relleno
+    const transformedPoints = region.contour.map(point => {
+      const x = (point[0] - center_x) * scale;
+      // LA CORRECCIÓN CLAVE: Invertimos el eje Y para que coincida con turtle
+      const y = (point[1] - center_y) * -scale;
+      return { x, y };
+    });
+    transformedRegions.push({
+      points: transformedPoints,
+      color: region.color,
+    });
+  }
+}
+
+// 2. BUCLE DE DIBUJO (se ejecuta en cada fotograma)
+function draw() {
+  if (animationIsFinished) {
+    noLoop(); // Detenemos el bucle si ya terminamos
+    return;
+  }
+  
+  // LA CORRECCIÓN DE POSICIÓN: Movemos el origen al centro del lienzo
+  translate(width / 2, height / 2);
+  
+  // Dibujamos las regiones que ya están completas
+  for (let i = 0; i < currentRegionIndex; i++) {
+    const region = transformedRegions[i];
     const c = region.color;
     fill(c[0], c[1], c[2]);
-    noStroke(); // No dibujar el borde de la forma
-
-    // Dibujar el polígono (equivalente a begin_fill, goto y end_fill)
+    noStroke();
+    
     beginShape();
-    for (const point of region.contour) {
-      // Aplicar la misma transformación de escala y centrado
-      const x = (point[0] - center_x) * scale;
-      // La coordenada 'y' se invierte en p5.js en comparación con turtle
-      const y = (point[1] - center_y) * -scale; 
-      vertex(x, y);
+    for(const p of region.points) {
+      vertex(p.x, p.y);
     }
-    endShape(CLOSE); // Cierra la forma
+    endShape(CLOSE);
+  }
+  
+  // --- LÓGICA DE LA ANIMACIÓN ---
+  // Dibuja la región actual, línea por línea
+  const currentRegion = transformedRegions[currentRegionIndex];
+  const c = currentRegion.color;
+  
+  stroke(c[0], c[1], c[2]); // Damos color al trazo
+  strokeWeight(2);          // Hacemos el trazo visible
+  noFill();                 // No rellenamos mientras se dibuja la línea
+
+  beginShape();
+  for (let i = 0; i <= currentPointIndex; i++) {
+    const point = currentRegion.points[i];
+    vertex(point.x, point.y);
+  }
+  endShape();
+  
+  // Avanzamos al siguiente punto
+  currentPointIndex++;
+
+  // Si terminamos los puntos de la región actual...
+  if (currentPointIndex >= currentRegion.points.length) {
+    // Rellenamos la forma que acabamos de terminar de trazar
+    fill(c[0], c[1], c[2]);
+    noStroke();
+    beginShape();
+    for(const p of currentRegion.points) {
+      vertex(p.x, p.y);
+    }
+    endShape(CLOSE);
+    
+    // Y pasamos a la siguiente región
+    currentRegionIndex++;
+    currentPointIndex = 0;
+  }
+  
+  // Si ya no hay más regiones, terminamos la animación
+  if (currentRegionIndex >= transformedRegions.length) {
+    animationIsFinished = true;
   }
 }
